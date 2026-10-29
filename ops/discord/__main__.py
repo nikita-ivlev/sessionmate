@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--url", required=True, help="release page")
     s.add_argument("--notes", type=Path, required=True, help="markdown file")
     s.add_argument("--channel", help="override the target channel name")
+    s.add_argument("--download", help="direct URL of the Setup.exe asset: a link and a button in the post")
 
     s = sub.add_parser("fixed", help="#bugs posts tagged fixed-in-next -> fixed, reply with the version")
     s.add_argument("--tag", required=True)
@@ -49,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         server.apply(dc, server.load(a.config), dry_run=a.dry_run, prune=a.prune)
     elif a.cmd == "announce":
         notes = a.notes.read_text(encoding="utf-8-sig")
-        releases.announce(dc, server.load(a.config), a.tag, a.url, notes, a.channel)
+        releases.announce(dc, server.load(a.config), a.tag, a.url, notes, a.channel, download=a.download)
     elif a.cmd == "fixed":
         releases.mark_fixed(dc, server.load(a.config), a.tag, a.url)
     elif a.cmd == "inbox":

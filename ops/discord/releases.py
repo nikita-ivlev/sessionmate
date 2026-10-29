@@ -13,27 +13,31 @@ LOGO = "https://raw.githubusercontent.com/nikita-ivlev/sessionmate/main/assets/l
 PING_ROLE = "release-pings"  # role key in server.toml: members pick it in onboarding
 
 
-def announce_body(tag: str, url: str, notes: str, ping: str | None = None) -> dict:
-    """notes = the CHANGELOG section of this version (markdown)."""
+def announce_body(tag: str, url: str, notes: str, ping: str | None = None, download: str | None = None) -> dict:
+    """notes = the CHANGELOG section of this version (markdown); download = the Setup.exe asset URL."""
     notes = re.sub(r"(?m)^#{1,6}\s*(.+?)\s*$", r"**\1**", notes.strip())  # headings -> bold: one size in an embed
-    tail = f"\n\n[Download and full notes]({url})"
-    if len(notes) + len(tail) > EMBED_LIMIT:
-        notes = notes[: EMBED_LIMIT - len(tail) - 2].rsplit("\n", 1)[0] + "\n…"
-    notes += tail
+    head = f"⬇️ **[Download {download.rsplit('/', 1)[-1]}]({download})** · Windows 10/11\n\n" if download else ""
+    tail = f"\n\n[Full release notes]({url})"
+    room = EMBED_LIMIT - len(head) - len(tail)
+    if len(notes) > room:
+        notes = notes[: room - 2].rsplit("\n", 1)[0] + "\n…"
     content = f"New version: **{tag}**"
     if ping:
         content = f"<@&{ping}> {content}"
+    buttons = [{"type": 2, "style": 5, "label": "Download for Windows", "url": download, "emoji": {"name": "⬇️"}}]
+    buttons = (buttons if download else []) + [{"type": 2, "style": 5, "label": "Release notes", "url": url}]
     return {
         "content": content,
         "allowed_mentions": {"roles": [ping] if ping else []},
         "embeds": [{
             "title": f"Sessionmate {tag}",
             "url": url,
-            "description": notes,
+            "description": head + notes + tail,
             "color": COLOR,
             "thumbnail": {"url": LOGO},
             "footer": {"text": "Pre-release" if "-" in tag else "Release"},
         }],
+        "components": [{"type": 1, "components": buttons}],  # link buttons: one click to the installer
     }
 
 
@@ -43,7 +47,7 @@ def default_channel(tag: str) -> str:
 
 
 def announce(dc: Discord, cfg: dict, tag: str, url: str, notes: str, channel: str | None = None,
-             echo=print) -> str | None:
+             echo=print, download: str | None = None) -> str | None:
     _no_private_terms(notes)
     cid = server.channel_id(cfg, channel or default_channel(tag))
     me = dc.get("/users/@me")["id"]
@@ -53,7 +57,7 @@ def announce(dc: Discord, cfg: dict, tag: str, url: str, notes: str, channel: st
             echo(f"  {tag} already announced (message {m['id']})")
             return None
     ping = None if "-rc." in tag else server.role_id(cfg, PING_ROLE)  # test builds ping nobody
-    msg = dc.post(f"/channels/{cid}/messages", announce_body(tag, url, notes, ping))
+    msg = dc.post(f"/channels/{cid}/messages", announce_body(tag, url, notes, ping, download))
     if dc.get(f"/channels/{cid}")["type"] == server.TYPES["announcement"]:
         dc.post(f"/channels/{cid}/messages/{msg['id']}/crosspost")  # reaches servers that follow #releases
     echo(f"  announced {tag} in #{channel or default_channel(tag)}")
