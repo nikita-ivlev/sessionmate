@@ -54,10 +54,13 @@ def collect(dc: Discord, cfg: dict, root: Path = ROOT, everything: bool = False,
     state_file = root / "state.json"
     state = {} if everything or not state_file.is_file() else json.loads(state_file.read_text("utf-8"))
     touched = []
+    me = dc.get("/users/@me")["id"]
     for forum in FORUMS:
         fid = server.channel_id(cfg, forum)
         names = {v: k for k, v in tag_ids(dc, fid).items()}
         for th in forum_threads(dc, gid, fid):
+            if th.get("owner_id") == me:
+                continue   # the bot's own pinned guide
             msgs = _new_messages(dc, th["id"], state.get(th["id"]))
             if not msgs:
                 continue

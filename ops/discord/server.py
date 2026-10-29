@@ -14,10 +14,11 @@ import json
 import re
 import time
 import tomllib
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .api import Discord
+from .api import Discord, DiscordError
 
 CONFIG = Path(__file__).with_name("server.toml")
 
@@ -49,6 +50,12 @@ GUILD_FIELDS = ("name", "description", "preferred_locale", "verification_level",
 GUILD_CHANNELS = ("rules_channel", "public_updates_channel", "safety_alerts_channel", "system_channel")
 MESSAGE_LIMIT = 2000
 NO_PINGS = {"parse": []}  # a post may show a role or a channel; it never pings anyone
+LAYOUTS = {"list": 1, "gallery": 2}  # forum view
+SORTS = {"activity": 0, "created": 1}
+# AutoMod: only "keyword" rules can be several; one of each other kind per server, so those match by kind.
+TRIGGERS = {"keyword": 1, "spam": 3, "preset": 4, "mention_spam": 5}
+PRESETS = {"profanity": 1, "sexual": 2, "slurs": 3}
+PINNED = 1 << 1  # forum post flag
 
 
 # --- config -------------------------------------------------------------------------------------
@@ -100,6 +107,20 @@ def data_uri(path: Path) -> str:
     return f"data:image/{path.suffix.lstrip('.')};base64," + base64.b64encode(path.read_bytes()).decode()
 
 
+def forum_threads(dc: Discord, guild_id: str, forum_id: str) -> Iterator[dict]:
+    """Active and archived posts of one forum."""
+    for th in dc.get(f"/guilds/{guild_id}/threads/active")["threads"]:
+        if th.get("parent_id") == forum_id:
+            yield th
+    before = ""
+    while True:
+        page = dc.get(f"/channels/{forum_id}/threads/archived/public?limit=100{before}")
+        yield from page["threads"]
+        if not page.get("has_more") or not page["threads"]:
+            return
+        before = "&before=" + page["threads"][-1]["thread_metadata"]["archive_timestamp"]
+
+
 # --- live state ---------------------------------------------------------------------------------
 
 @dataclass
@@ -113,6 +134,8 @@ class Live:
     emojis: list[dict] = field(default_factory=list)
     onboarding: dict | None = None
     welcome: dict | None = None
+    automod: list[dict] = field(default_factory=list)
+    threads: dict[str, list[dict]] = field(default_factory=dict)  # forum key -> the bot's own posts
 
     @classmethod
     def fetch(cls, dc: Discord, cfg: dict) -> Live:
@@ -136,10 +159,25 @@ class Live:
             live.onboarding = dc.get(f"/guilds/{gid}/onboarding")
         if "welcome_screen" in cfg:
             live.welcome = dc.get_or_none(f"/guilds/{gid}/welcome-screen")
+        if "automod" in cfg:
+            live.automod = dc.get(f"/guilds/{gid}/auto-moderation/rules")
+        for k in dict.fromkeys(p["channel"] for p in cfg.get("forum_post", [])):
+            forum = live.channel(channel_spec(cfg, k))
+            if forum:
+                live.threads[k] = [t for t in forum_threads(dc, gid, forum["id"]) if t.get("owner_id") == live.bot_id]
+                for th in live.threads[k]:  # the starter message id = the post id
+                    starter = dc.get_or_none(f"/channels/{th['id']}/messages/{th['id']}")
+                    th["_text"] = (starter or {}).get("content", "")
         return live
 
     def channel(self, spec: dict, category: bool = False) -> dict | None:
+        """A text channel and a forum are different things: Discord turns text into announcement
+        and back, nothing else. A channel of another type does not match (apply makes a new one)."""
         pool = [c for c in self.channels if (c["type"] == 4) == category]
+        if not category and spec.get("type"):
+            want = TYPES[spec["type"]]
+            ok = {0, 5} if want in (0, 5) else {want}
+            pool = [c for c in pool if c["type"] in ok]
         by_id = next((c for c in pool if spec.get("id") and c["id"] == spec["id"]), None)
         return by_id or next((c for c in pool if c["name"] in (spec["name"], key(spec))), None)
 
@@ -246,6 +284,7 @@ class Change:
     path: str
     body: object = None
     files: list[tuple[str, bytes]] | None = None
+    if_missing: Change | None = None   # run this instead when the target answers 404
 
 
 def plan_parents(cfg: dict, live: Live) -> list[Change]:
@@ -304,8 +343,94 @@ def plan_updates(cfg: dict, live: Live, prune: bool = False) -> list[Change]:
         out += _plan_channel(cfg, live, cat, spec, prune)
     out += _plan_positions(cfg, live)
     out += plan_posts(cfg, live, refs)
+    out += plan_forum_posts(cfg, live, refs)
     out += _plan_onboarding(cfg, live, refs)
     out += _plan_welcome_screen(cfg, live, refs)
+    out += plan_automod(cfg, live, refs)
+    return out
+
+
+def _automod_body(spec: dict, refs: dict) -> dict:
+    kind = spec["trigger"]
+    meta: dict = {}
+    if kind == "keyword":
+        meta = {"keyword_filter": spec.get("keywords", []), "regex_patterns": spec.get("regex", []),
+                "allow_list": spec.get("allow", [])}
+    elif kind == "preset":
+        meta = {"presets": [PRESETS[p] for p in spec["presets"]], "allow_list": spec.get("allow", [])}
+    elif kind == "mention_spam":
+        meta = {"mention_total_limit": spec["mention_limit"],
+                "mention_raid_protection_enabled": spec.get("raid_protection", True)}
+    block: dict = {"type": 1, "metadata": {}}   # the message is not sent; no ban, no timeout
+    if spec.get("message"):
+        block["metadata"]["custom_message"] = spec["message"]
+    actions = [block]
+    if spec.get("alert") in refs["#"]:
+        actions.append({"type": 2, "metadata": {"channel_id": refs["#"][spec["alert"]]}})
+    return {"name": spec["name"], "event_type": 1, "trigger_type": TRIGGERS[kind], "trigger_metadata": meta,
+            "actions": actions, "enabled": spec.get("enabled", True),
+            "exempt_roles": sorted(refs["@"][r] for r in spec.get("exempt_roles", []) if r in refs["@"])}
+
+
+def _automod_view(rule: dict) -> tuple:
+    meta = rule.get("trigger_metadata") or {}
+    norm = {k: sorted(v) if isinstance(v, list) else v for k, v in meta.items()}
+    acts = sorted((a["type"], a.get("metadata", {}).get("custom_message", ""), a.get("metadata", {}).get("channel_id", ""))
+                  for a in rule.get("actions", []))
+    return rule["name"], norm, acts, bool(rule.get("enabled")), sorted(rule.get("exempt_roles", []))
+
+
+def plan_automod(cfg: dict, live: Live, refs: dict) -> list[Change]:
+    """AutoMod blocks a message and tells #mod-log; it never bans or times anyone out."""
+    gid = cfg["guild"]["id"]
+    out = []
+    for spec in cfg.get("automod", []):
+        body = _automod_body(spec, refs)
+        kind = body["trigger_type"]
+        rule = next((r for r in live.automod if r["trigger_type"] == kind and (kind != 1 or r["name"] == spec["name"])),
+                    None)
+        if rule is None:
+            out.append(Change(f"create automod rule {spec['name']}", "POST", f"/guilds/{gid}/auto-moderation/rules", body))
+            continue
+        live_view = _automod_view(rule)
+        want_view = _automod_view(body)
+        keys = set(want_view[1])   # Discord adds metadata keys we do not set: compare ours only
+        live_view = (live_view[0], {k: live_view[1].get(k, [] if isinstance(want_view[1][k], list) else None)
+                                    for k in keys}, *live_view[2:])
+        if live_view != want_view:
+            patch = {k: v for k, v in body.items() if k != "trigger_type"}   # the kind of a rule cannot change
+            # Discord's own default rule is a template until saved: PATCH says 404, a new rule replaces it.
+            create = Change(f"create automod rule {spec['name']}", "POST", f"/guilds/{gid}/auto-moderation/rules", body)
+            out.append(Change(f"automod rule {spec['name']}", "PATCH",
+                              f"/guilds/{gid}/auto-moderation/rules/{rule['id']}", patch, if_missing=create))
+    return out
+
+
+def plan_forum_posts(cfg: dict, live: Live, refs: dict) -> list[Change]:
+    """[[forum_post]]: the bot's own post in a forum (FAQ), matched by its title; pinned on request."""
+    out = []
+    for spec in cfg.get("forum_post", []):
+        k = spec["channel"]
+        forum = live.channel(channel_spec(cfg, k))
+        if not forum or k not in live.threads:
+            continue
+        text = render(spec["text"], refs)
+        th = next((t for t in live.threads[k] if t["name"] == spec["title"]), None)
+        if th is None:
+            tags = {t["name"]: t["id"] for t in forum.get("available_tags", [])}
+            out.append(Change(f"#{k}: new post {spec['title']!r}", "POST", f"/channels/{forum['id']}/threads", {
+                "name": spec["title"], "applied_tags": [tags[t] for t in spec.get("tags", []) if t in tags],
+                "message": {"content": text, "flags": 4, "allowed_mentions": NO_PINGS}}))
+            continue
+        if th["thread_metadata"].get("archived") and (th["_text"] != text or spec.get("pinned")):
+            out.append(Change(f"#{k}: reopen post {spec['title']!r}", "PATCH", f"/channels/{th['id']}",
+                              {"archived": False}))
+        if th["_text"] != text:
+            out.append(Change(f"#{k}: edit post {spec['title']!r}", "PATCH", f"/channels/{th['id']}/messages/{th['id']}",
+                              {"content": text}))
+        if spec.get("pinned") and not th.get("flags", 0) & PINNED:
+            out.append(Change(f"#{k}: pin post {spec['title']!r}", "PATCH", f"/channels/{th['id']}",
+                              {"flags": th.get("flags", 0) | PINNED}))
     return out
 
 
@@ -364,6 +489,10 @@ def _plan_channel(cfg: dict, live: Live, cat: dict, spec: dict, prune: bool) -> 
         now = (ch.get("default_reaction_emoji") or {}).get("emoji_name")
         if now != spec["default_reaction"]:
             cb["default_reaction_emoji"] = {"emoji_name": spec["default_reaction"]}
+    if "layout" in spec and ch.get("default_forum_layout") != LAYOUTS[spec["layout"]]:
+        cb["default_forum_layout"] = LAYOUTS[spec["layout"]]
+    if "sort" in spec and ch.get("default_sort_order") != SORTS[spec["sort"]]:
+        cb["default_sort_order"] = SORTS[spec["sort"]]
     if cb:
         out.append(Change(f"#{key(spec)}: {', '.join(sorted(cb))}", "PATCH", f"/channels/{ch['id']}", cb))
     if spec.get("type") == "announcement" and ch["type"] != TYPES["announcement"]:
@@ -454,6 +583,8 @@ def _plan_onboarding(cfg: dict, live: Live, refs: dict) -> list[Change]:
     ob = cfg.get("onboarding")
     if not ob or live.onboarding is None:
         return []
+    if any(c not in refs["#"] for c in ob["default_channels"]):
+        return []   # a dry run before new channels exist; the real run creates them first
     old = {p["title"]: p for p in live.onboarding.get("prompts", [])}
     prompts = []
     for p in ob.get("prompt", []):
@@ -525,6 +656,11 @@ def apply(dc: Discord, cfg: dict, *, dry_run: bool, prune: bool = False, echo=pr
     changes = plan_updates(cfg, live, prune)
     _run(dc, changes, dry_run, echo)
     done += changes
+    if not dry_run and any(c.desc.startswith("#") and ": new post " in c.desc for c in changes):
+        live = Live.fetch(dc, cfg)   # a new forum post exists now: pin it
+        changes = plan_forum_posts(cfg, live, live.refs(cfg))
+        _run(dc, changes, dry_run, echo)
+        done += changes
     extras = plan_extras(cfg, live)
     if prune:
         _run(dc, extras, dry_run, echo)
@@ -542,8 +678,15 @@ def apply(dc: Discord, cfg: dict, *, dry_run: bool, prune: bool = False, echo=pr
 def _run(dc: Discord, changes: list[Change], dry_run: bool, echo) -> None:
     for c in changes:
         echo(("  would " if dry_run else "  ") + c.desc)
-        if not dry_run:
+        if dry_run:
+            continue
+        try:
             dc.call(c.method, c.path, c.body, c.files)
+        except DiscordError as exc:
+            if exc.status != 404 or c.if_missing is None:
+                raise
+            echo("    404: " + c.if_missing.desc)
+            dc.call(c.if_missing.method, c.if_missing.path, c.if_missing.body, c.if_missing.files)
 
 
 # --- ids ----------------------------------------------------------------------------------------

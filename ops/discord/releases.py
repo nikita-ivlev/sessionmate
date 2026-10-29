@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
 
 from . import server
 from .api import Discord
@@ -65,7 +64,7 @@ def announce(dc: Discord, cfg: dict, tag: str, url: str, notes: str, channel: st
 
 
 def _no_private_terms(text: str) -> None:
-    """Features after someone else's idea never reach Discord. The list lives only in the code repo."""
+    """No public text says where an idea came from. The list lives only in the code repo."""
     try:
         from ops.release import changelog  # noqa: PLC0415 - absent in the public repo copy
     except ImportError:
@@ -75,18 +74,7 @@ def _no_private_terms(text: str) -> None:
         raise SystemExit(f"announcement names private things: {', '.join(hits)}")
 
 
-def forum_threads(dc: Discord, guild_id: str, forum_id: str) -> Iterator[dict]:
-    """Active and archived posts of one forum."""
-    for th in dc.get(f"/guilds/{guild_id}/threads/active")["threads"]:
-        if th.get("parent_id") == forum_id:
-            yield th
-    before = ""
-    while True:
-        page = dc.get(f"/channels/{forum_id}/threads/archived/public?limit=100{before}")
-        yield from page["threads"]
-        if not page.get("has_more") or not page["threads"]:
-            return
-        before = "&before=" + page["threads"][-1]["thread_metadata"]["archive_timestamp"]
+forum_threads = server.forum_threads  # inbox and issues import it from here
 
 
 def tag_ids(dc: Discord, forum_id: str) -> dict[str, str]:

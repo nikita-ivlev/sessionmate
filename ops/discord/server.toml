@@ -7,9 +7,9 @@
 [guild]
 id = "1565368514670370826"
 name = "Sessionmate"
-description = "AI assistant inside FL Studio. Open alpha: bugs, ideas, releases."
+description = "AI assistant inside FL Studio, made by Nick Ivlev (instagram.com/nick_ivlev). Open alpha: bugs, ideas, releases."
 preferred_locale = "en-US"
-verification_level = 1
+verification_level = 2  # a Discord account younger than 5 minutes can read, and write once it is older: no ban
 explicit_content_filter = 2
 default_message_notifications = 1
 community = true
@@ -35,6 +35,25 @@ hoist = false
 mentionable = false  # only the bot pings it, in release announcements
 permissions = []
 
+# Given by the bot (community.award_roles, in the sync job): a confirmed bug report / an idea in the plan.
+[[role]]
+key = "bug-hunter"
+name = "Bug hunter"
+id = "1565422867934609480"
+color = "#E5484D"
+hoist = true
+mentionable = false
+permissions = []
+
+[[role]]
+key = "idea-maker"
+name = "Idea maker"
+id = "1565422870451069098"
+color = "#F5C542"
+hoist = true
+mentionable = false
+permissions = []
+
 [[emoji]]
 name = "sessionmate"
 image = "art/emoji-sessionmate.png"
@@ -58,6 +77,15 @@ id = "1565368711462916218"
 type = "announcement"
 access = "read-only"
 topic = "New Sessionmate versions, posted by the bot. Pick the Release pings role to get a ping."
+
+# One bot post, rebuilt from #ideas (planned / done) by `python -m ops.discord roadmap` in the code repo's CI.
+[[category.channel]]
+key = "roadmap"
+name = "📍┃roadmap"
+id = "1565422888784367756"
+type = "text"
+access = "read-only"
+topic = "What is coming next: ideas from the ideas forum the team picked. Updated by the bot."
 
 [[category.channel]]
 key = "mod-log"
@@ -130,19 +158,48 @@ id = "1565375090130952274"
 type = "text"
 topic = "Everything else about Sessionmate and FL Studio."
 
+# Forums: a question / a track is a post, findable later. (The text channels of the same name went 29.10.)
 [[category.channel]]
 key = "help"
 name = "🛟┃help"
 id = "1565375093419409433"
-type = "text"
-topic = "Install, setup, LLM key, Ollama questions."
+type = "forum"
+layout = "list"
+sort = "activity"
+topic = """
+One question per post. Read the pinned FAQ first: most setup questions are there.
+Say your FL Studio version, your model (Z.ai, Groq, Ollama, …) and what you see on the screen.
+It works now? Add the ✅ solved tag to your post."""
+tags = [
+  { name = "install", emoji = "📦" },
+  { name = "model-key", emoji = "🔑" },
+  { name = "fl-connection", emoji = "🔌" },
+  { name = "samples", emoji = "🥁" },
+  { name = "other", emoji = "❓" },
+  { name = "solved", emoji = "✅" },
+]
 
 [[category.channel]]
 key = "showcase"
 name = "🎧┃showcase"
 id = "1565375096900685885"
-type = "text"
-topic = "Share tracks and clips you made with Sessionmate."
+type = "forum"
+layout = "gallery"
+sort = "created"
+default_reaction = "🔥"
+topic = """
+Share a track or a clip you made with Sessionmate. Add a picture or a short video: it becomes the cover.
+Tag the genre. Say what Sessionmate did (the kit, the chords, the search). Be kind in the replies."""
+tags = [
+  { name = "hip-hop", emoji = "🎤" },
+  { name = "trap", emoji = "🔥" },
+  { name = "house", emoji = "🏠" },
+  { name = "techno", emoji = "🤖" },
+  { name = "dnb", emoji = "⚡" },
+  { name = "lo-fi", emoji = "🌙" },
+  { name = "pop", emoji = "🎵" },
+  { name = "other", emoji = "✨" },
+]
 
 [[category]]
 name = "VOICE"
@@ -175,7 +232,8 @@ channel = "welcome"
 text = """
 • **Download:** <https://github.com/nikita-ivlev/sessionmate/releases>
 • **Known limitations:** <https://github.com/nikita-ivlev/sessionmate/blob/main/KNOWN_LIMITATIONS.md>
-• **New versions:** pick 🔔 {@release-pings} in *Channels & Roles*. The bot pings you on each release."""
+• **New versions:** pick 🔔 {@release-pings} in *Channels & Roles*. The bot pings you on each release.
+• **The maker:** Nick Ivlev — write me on Instagram: <https://www.instagram.com/nick_ivlev/>"""
 
 [[message]]
 channel = "welcome"
@@ -186,9 +244,12 @@ channel = "welcome"
 text = """
 • {#bugs} — something broke. One post per bug.
 • {#ideas} — a feature you want.
-• {#help} — install or setup questions.
+• {#help} — install or setup questions. Read the pinned FAQ first.
 • {#showcase} — music you made with Sessionmate.
-• {#releases} — new versions (automatic)."""
+• {#releases} — new versions (automatic).
+• {#roadmap} — what is coming next, picked from the ideas.
+
+A confirmed bug report gives you the {@bug-hunter} role; an idea we put in the plan gives you {@idea-maker}."""
 
 [[message]]
 channel = "welcome"
@@ -209,7 +270,7 @@ text = """
 [onboarding]
 enabled = true
 # Discord needs 7+ default channels, 5 of them open for posting.
-default_channels = ["welcome", "releases", "bugs", "ideas", "general", "help", "showcase"]
+default_channels = ["welcome", "releases", "roadmap", "bugs", "ideas", "general", "help", "showcase"]
 
 [[onboarding.prompt]]
 title = "Get pinged on new versions?"
@@ -250,3 +311,89 @@ emoji = "💡"
 channel = "help"
 description = "Install and setup questions"
 emoji = "🛟"
+
+# --- pinned guides at the top of each forum (one pinned post per forum) ---------------------------
+
+[[forum_post]]
+channel = "bugs"
+title = "Start here: how to report a bug"
+pinned = true
+text = """
+**How to post a bug — 1 minute**
+1. **Search first.** Same bug here? 👍 it and add your details.
+2. **Title:** what broke, in a few words. *Kit search finds nothing*
+3. **Tag it:** 📦 installer · 🔌 fl-connection · 💬 chat · 🥁 samples · 💥 crash · 🐢 performance
+4. **Write:** what you did → what happened → what you expected. Your FL Studio and Windows version.
+5. **Attach the logs:** Sessionmate window → **Settings → Diagnostics → Collect report → Show in folder** → drag `support_diagnostics_bundle.json` into your post. No API key inside. The window does not open? A screenshot instead.
+
+We set the status: 🔍 confirmed → 🔧 fixed-in-next → ✅ fixed, with the version in a reply. A confirmed bug gives you {@bug-hunter}.
+Each post also becomes a public GitHub issue: your first message's text only. Setup questions: {#help}."""
+
+[[forum_post]]
+channel = "ideas"
+title = "Start here: how to share an idea"
+pinned = true
+text = """
+**Got an idea for Sessionmate? This is the place.**
+1. **Search first.** If the idea is here, add 👍 and how you would use it: votes decide what comes next.
+2. **One post = one idea.** Say what you want to do in FL Studio and why it matters for your music.
+
+**What happens next**
+• Tags show the status: 📅 planned, ✅ done, 💤 not-now.
+• Planned ideas go to {#roadmap}, next to what we already build.
+• An idea in the plan gives you the {@idea-maker} role."""
+
+# --- pinned FAQ in #help (facts from the public README) ------------------------------------------
+
+[[forum_post]]
+channel = "help"
+title = "Start here: FAQ"
+pinned = true
+tags = ["install"]
+text = """
+**Windows says "Windows protected your PC".** The installer is not code-signed yet. Click **More info → Run anyway**. You can check the SHA-256 from the release page first.
+**Setup asks for administrator rights.** That is loopMIDI, the virtual MIDI port Sessionmate uses. Once.
+**Setup does not go on after the model page.** It goes on only when the model answers: click **Check**. Free: Z.ai, Groq, or Ollama on your PC (16 GB RAM, 8 GB GPU).
+**No "Sessionmate" in FL's plugin list.** Options → Manage plugins → Find installed plugins. Then add it as an effect on the Master track of the Mixer.
+**FL does not react to requests.** Options → MIDI settings: input `fl-mcp` is on, controller type "Test Controller", port 77.
+**The sample folder does not work.** It must be on an NTFS drive: not a USB stick, not a network drive. Restart FL once after the first sort.
+**Something else broke.** Settings → Diagnostics → Collect report, then post in {#bugs} with the file.
+Known limitations: <https://github.com/nikita-ivlev/sessionmate/blob/main/KNOWN_LIMITATIONS.md>"""
+
+# --- AutoMod: blocks the message and tells #mod-log; never bans, never times out ------------------
+
+[[automod]]
+name = "No piracy"
+trigger = "keyword"
+keywords = ["crack", "cracked", "keygen*", "*torrent*", "warez", "nulled", "repack", "serial key", "activation key"]
+message = "No piracy here: no cracks, keygens or torrents. Rule 3 in the welcome channel."
+alert = "mod-log"
+exempt_roles = ["Team"]
+
+[[automod]]
+name = "No invites to other servers"
+trigger = "keyword"
+regex = ['discord(?:\.gg|(?:app)?\.com/invite)/\S+']   # Rust regex: no lookahead; Team may post invites
+message = "No invites to other servers, please."
+alert = "mod-log"
+exempt_roles = ["Team"]
+
+[[automod]]
+name = "Block spam"
+trigger = "spam"
+alert = "mod-log"
+
+[[automod]]
+name = "Block Mention Spam"
+trigger = "mention_spam"
+mention_limit = 5
+raid_protection = true
+message = "Too many mentions in one message."
+alert = "mod-log"
+exempt_roles = ["Team"]
+
+[[automod]]
+name = "Slurs and sexual content"
+trigger = "preset"
+presets = ["slurs", "sexual"]
+alert = "mod-log"

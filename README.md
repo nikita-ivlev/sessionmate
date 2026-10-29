@@ -72,6 +72,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md). The short list:
   Attach the report file: Sessionmate window → **Settings** → **Diagnostics** → **Collect report**.
 - **Idea:** [share an idea](../../issues/new?template=idea.yml).
 - **Chat:** [join the Discord](https://discord.gg/psbnWQw7JE) — help with setup, bugs, ideas, new releases.
+- **The maker:** Nick Ivlev — [Instagram @nick_ivlev](https://www.instagram.com/nick_ivlev/).
 
 ## Privacy
 

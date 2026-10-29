@@ -101,8 +101,11 @@ def sync(dc: Discord, gh: GitHub, cfg: dict, echo=print) -> None:
     tags = tag_ids(dc, forum)
     by_thread = {t: i for i in gh.issues() if (t := thread_of(i))}
     _ensure_labels(gh)
+    me = dc.get("/users/@me")["id"]
     moved = 0
     for th in forum_threads(dc, gid, forum):
+        if th.get("owner_id") == me:
+            continue   # the bot's own pinned "how to report" post is not a bug
         issue = by_thread.get(th["id"])
         if issue is None:
             try:  # the starter message id = post id; the author may have deleted it
