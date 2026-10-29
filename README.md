@@ -63,14 +63,15 @@ Your samples are not touched.
 See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md). The short list:
 
 - Windows only, FL Studio 2026 only.
-- The window labels are in Russian for now. Answers come in the language of your request.
+- The window speaks English or Russian (Settings → Window language). Answers come in the language of your request.
 - No playlist arrangement editing, no rendering, no loading of third-party plugins yet.
 
 ## Report a bug or share an idea
 
 - **Bug:** [open a bug report](../../issues/new?template=bug_report.yml).
-  Attach the report file: Sessionmate window → **Диагностика** (Diagnostics) → **Собрать отчёт** (Collect report).
+  Attach the report file: Sessionmate window → **Settings** → **Diagnostics** → **Collect report**.
 - **Idea:** [share an idea](../../issues/new?template=idea.yml).
+- **Chat:** [join the Discord](https://discord.gg/psbnWQw7JE) — help with setup, bugs, ideas, new releases.
 
 ## Privacy
 
