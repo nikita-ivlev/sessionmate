@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" width="128" height="128" alt="Sessionmate logo"></p>
+
 # Sessionmate™ for FL Studio 2026 — public alpha
 
 Sessionmate is an AI assistant that lives inside FL Studio. Type or say what you need —
@@ -44,7 +46,7 @@ straight to the provider you picked.
 4. Windows asks once for administrator rights: that is loopMIDI, the virtual MIDI port Sessionmate uses.
 5. Pick a model and click **Check**. Setup goes on only when the model answers.
 6. Start FL Studio. Add **Sessionmate** as an effect on the Master track of the Mixer.
-7. In its window, click **Выбрать папку…** (Choose folder) and pick your samples.
+7. In its window, click **Choose folder…** and pick your samples.
    Restart FL once after the first sort.
 
 No "Sessionmate" in the plugin list? *Options → Manage plugins → Find installed plugins.*

@@ -1,2 +1,5 @@
 blank_issues_enabled: false
-# Discord: add a contact_links entry when the invite link exists.
+contact_links:
+  - name: Discord
+    url: https://discord.gg/psbnWQw7JE
+    about: Questions about setup, quick help, new releases.

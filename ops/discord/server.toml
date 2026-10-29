@@ -1,0 +1,157 @@
+# Sessionmate Discord server as code. Apply: python -m ops.discord apply --dry-run, then apply.
+# Ids pin renames. {#name} in a message becomes a channel link.
+
+[guild]
+id = "1565368514670370826"
+name = "Sessionmate"
+preferred_locale = "en-US"
+verification_level = 1
+explicit_content_filter = 2
+default_message_notifications = 1
+community = true
+rules_channel = "welcome"
+public_updates_channel = "mod-log"
+safety_alerts_channel = "mod-log"
+system_channel = "general"
+
+[[role]]
+name = "Team"
+id = "1565375357069172757"
+color = "#8B5CF6"
+hoist = true
+mentionable = true
+permissions = ["KICK_MEMBERS", "BAN_MEMBERS", "MANAGE_CHANNELS", "MANAGE_MESSAGES", "MANAGE_THREADS", "MODERATE_MEMBERS"]
+members = ["1497345546606612550"]  # owner only; add user ids by hand
+
+[[category]]
+name = "INFO"
+id = "1565368514670370827"
+
+[[category.channel]]
+name = "welcome"
+id = "1565368602750619749"
+type = "text"
+access = "read-only"
+topic = "Start here: what Sessionmate is, links, rules."
+
+[[category.channel]]
+name = "releases"
+id = "1565368711462916218"
+type = "announcement"
+access = "read-only"
+topic = "New Sessionmate versions. Posted automatically from GitHub."
+
+[[category.channel]]
+name = "mod-log"
+id = "1565375101103382558"
+type = "text"
+access = "private"
+
+[[category]]
+name = "FEEDBACK"
+id = "1565375084074504273"
+
+[[category.channel]]
+name = "bugs"
+id = "1565368849069777007"
+type = "forum"
+topic = """
+One post = one bug. Before you post, search: maybe it is already reported.
+Please include:
+1. What you asked Sessionmate to do.
+2. What happened, and what you expected.
+3. FL Studio version and Windows version.
+4. The report file: Sessionmate window → Диагностика (Diagnostics) → Собрать отчёт (Collect report). Attach support_diagnostics_bundle.json.
+Do not post API keys. The report file does not contain them.
+Each post gets a public GitHub issue: the text of your first message only, no name, no files. Status updates come back here."""
+default_reaction = "👀"
+tags = [
+  { name = "installer" },
+  { name = "fl-connection" },
+  { name = "chat" },
+  { name = "samples" },
+  { name = "crash" },
+  { name = "performance" },
+  { name = "confirmed", moderated = true },
+  { name = "fixed-in-next", moderated = true },
+  { name = "fixed", moderated = true },
+  { name = "can't-reproduce", moderated = true },
+]
+
+[[category.channel]]
+name = "ideas"
+id = "1565368893525205012"
+type = "forum"
+topic = """
+One post = one idea. Search first — if the idea exists, add 👍 and your use case.
+Tell us: what you want to do in FL Studio, and why it matters for your workflow."""
+default_reaction = "👍"
+tags = [
+  { name = "chat" },
+  { name = "mixing" },
+  { name = "samples" },
+  { name = "midi" },
+  { name = "workflow" },
+  { name = "integration" },
+  { name = "planned", moderated = true },
+  { name = "done", moderated = true },
+  { name = "not-now", moderated = true },
+]
+
+[[category]]
+name = "COMMUNITY"
+id = "1565375086859526156"
+
+[[category.channel]]
+name = "general"
+id = "1565375090130952274"
+type = "text"
+topic = "Everything else about Sessionmate and FL Studio."
+
+[[category.channel]]
+name = "help"
+id = "1565375093419409433"
+type = "text"
+topic = "Install, setup, LLM key, Ollama questions."
+
+[[category.channel]]
+name = "showcase"
+id = "1565375096900685885"
+type = "text"
+topic = "Share tracks and clips you made with Sessionmate."
+
+[[category]]
+name = "VOICE"
+id = "1565368514670370828"
+
+[[category.channel]]
+name = "Lounge"
+id = "1565368515102376027"
+type = "voice"
+
+[[message]]
+channel = "welcome"
+id = "1565375367202472098"
+text = """
+**Welcome to Sessionmate** 👋
+Sessionmate is an AI assistant inside FL Studio. You type what you want, it builds it in your project.
+This is an open alpha. Things will break. Your reports make it better.
+
+**Get started**
+• Download: https://github.com/nikita-ivlev/sessionmate/releases
+• Known limitations: https://github.com/nikita-ivlev/sessionmate/blob/main/KNOWN_LIMITATIONS.md
+
+**Where to post**
+• {#bugs} — something broke. One post per bug.
+• {#ideas} — a feature you want.
+• {#help} — install or setup questions.
+• {#showcase} — music you made with Sessionmate.
+• {#releases} — new versions (automatic).
+
+**Rules**
+1. Be kind. No insults, no hate, no harassment.
+2. No spam, no ads, no self-promo outside showcase.
+3. No piracy. No cracked FL Studio, no cracked plugins, no links to them.
+4. Do not post API keys. Check your screenshots and logs before you post.
+5. English please, so everyone can read it.
+6. Discord Terms of Service apply: https://discord.com/terms"""
