@@ -35,6 +35,18 @@ def load_token() -> str:
     return path.read_text(encoding="utf-8-sig").strip()
 
 
+def _multipart(body: dict, files: list[tuple[str, bytes]]) -> tuple[bytes, str]:
+    boundary = "sessionmate" + os.urandom(8).hex()
+    parts = [(b'Content-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n'
+              + json.dumps(body).encode())]
+    for i, (name, blob) in enumerate(files):
+        parts.append(f'Content-Disposition: form-data; name="files[{i}]"; filename="{name}"\r\n'
+                     f"Content-Type: application/octet-stream\r\n\r\n".encode() + blob)
+    sep = f"--{boundary}\r\n".encode()
+    data = b"".join(sep + p + b"\r\n" for p in parts) + f"--{boundary}--\r\n".encode()
+    return data, f"multipart/form-data; boundary={boundary}"
+
+
 class Discord:
     """Thin REST wrapper. Never logs the token; waits out rate limits."""
 
@@ -42,14 +54,18 @@ class Discord:
         self._token = token or load_token()
         self._reason = reason
 
-    def call(self, method: str, path: str, body=None):
-        data = json.dumps(body).encode() if body is not None else None
+    def call(self, method: str, path: str, body=None, files: list[tuple[str, bytes]] | None = None):
+        """files: [(filename, bytes)] -> multipart; body goes as payload_json, attachments as files[i]."""
         headers = {
             "Authorization": f"Bot {self._token}",
             "User-Agent": _UA,
-            "Content-Type": "application/json",
             "X-Audit-Log-Reason": self._reason,
         }
+        if files:
+            data, headers["Content-Type"] = _multipart(body or {}, files)
+        else:
+            data = json.dumps(body).encode() if body is not None else None
+            headers["Content-Type"] = "application/json"
         for attempt in range(6):
             req = urllib.request.Request(API + path, data=data, method=method, headers=headers)
             try:
@@ -78,6 +94,15 @@ class Discord:
 
     def put(self, path: str, body=None):
         return self.call("PUT", path, body)
+
+    def get_or_none(self, path: str):
+        """GET that turns 404 (e.g. no welcome screen yet) into None."""
+        try:
+            return self.get(path)
+        except DiscordError as exc:
+            if exc.status == 404:
+                return None
+            raise
 
     def delete(self, path: str):
         return self.call("DELETE", path)

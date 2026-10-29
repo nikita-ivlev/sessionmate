@@ -1,17 +1,23 @@
 """Server as code: server.toml <-> the live Discord server.
 
 apply only creates and changes. Things on the server that the file does not list are reported;
-they are deleted only with prune=True (a human decides that).
+they are deleted only with prune=True (a human decides that). Two exceptions, both bot-owned:
+the bot's own posts in a channel with [[message]] specs are rebuilt when their number or order
+changes, and the onboarding / welcome screen are replaced as a whole.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import itertools
 import json
 import re
+import time
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .api import Discord, DiscordError
+from .api import Discord
 
 CONFIG = Path(__file__).with_name("server.toml")
 
@@ -42,6 +48,7 @@ GUILD_FIELDS = ("name", "description", "preferred_locale", "verification_level",
                 "explicit_content_filter", "default_message_notifications")
 GUILD_CHANNELS = ("rules_channel", "public_updates_channel", "safety_alerts_channel", "system_channel")
 MESSAGE_LIMIT = 2000
+NO_PINGS = {"parse": []}  # a post may show a role or a channel; it never pings anyone
 
 
 # --- config -------------------------------------------------------------------------------------
@@ -49,10 +56,16 @@ MESSAGE_LIMIT = 2000
 def load(path: Path = CONFIG) -> dict:
     with open(path, "rb") as f:
         cfg = tomllib.load(f)
+    cfg["_base"] = path.parent  # images are relative to the file
     for msg in cfg.get("message", []):
-        if len(msg["text"]) > MESSAGE_LIMIT:
+        if len(msg.get("text", "")) > MESSAGE_LIMIT:
             raise SystemExit(f"message in #{msg['channel']}: {len(msg['text'])} chars, limit {MESSAGE_LIMIT}")
     return cfg
+
+
+def key(spec: dict) -> str:
+    """The stable short name code uses ("bugs"); the display name may carry an emoji ("🐛┃bugs")."""
+    return spec.get("key", spec["name"])
 
 
 def channel_specs(cfg: dict) -> list[tuple[dict, dict]]:
@@ -60,11 +73,31 @@ def channel_specs(cfg: dict) -> list[tuple[dict, dict]]:
     return [(cat, ch) for cat in cfg.get("category", []) for ch in cat.get("channel", [])]
 
 
-def channel_id(cfg: dict, name: str) -> str:
+def channel_spec(cfg: dict, k: str) -> dict:
     for _, ch in channel_specs(cfg):
-        if ch["name"] == name and ch.get("id"):
-            return ch["id"]
-    raise SystemExit(f"server.toml: channel #{name} has no id (run export)")
+        if key(ch) == k:
+            return ch
+    raise SystemExit(f"server.toml: no channel {k}")
+
+
+def channel_id(cfg: dict, k: str) -> str:
+    ch = channel_spec(cfg, k)
+    if not ch.get("id"):
+        raise SystemExit(f"server.toml: channel {k} has no id (run pin-ids)")
+    return ch["id"]
+
+
+def role_id(cfg: dict, k: str) -> str | None:
+    return next((r.get("id") for r in cfg.get("role", []) if key(r) == k), None)
+
+
+def image_name(path: Path) -> str:
+    """Content hash in the name: apply sees a changed picture by the attachment's file name."""
+    return f"{path.stem}-{hashlib.sha256(path.read_bytes()).hexdigest()[:8]}{path.suffix}"
+
+
+def data_uri(path: Path) -> str:
+    return f"data:image/{path.suffix.lstrip('.')};base64," + base64.b64encode(path.read_bytes()).decode()
 
 
 # --- live state ---------------------------------------------------------------------------------
@@ -76,7 +109,10 @@ class Live:
     roles: list[dict]
     bot_id: str
     members: dict[str, dict] = field(default_factory=dict)
-    messages: list[dict | None] = field(default_factory=list)  # same order as cfg["message"]
+    posts: dict[str, list[dict]] = field(default_factory=dict)  # channel key -> bot posts, oldest first
+    emojis: list[dict] = field(default_factory=list)
+    onboarding: dict | None = None
+    welcome: dict | None = None
 
     @classmethod
     def fetch(cls, dc: Discord, cfg: dict) -> Live:
@@ -86,57 +122,56 @@ class Live:
             channels=dc.get(f"/guilds/{gid}/channels"),
             roles=dc.get(f"/guilds/{gid}/roles"),
             bot_id=dc.get("/users/@me")["id"],
+            emojis=dc.get(f"/guilds/{gid}/emojis"),
         )
         for uid in {u for r in cfg.get("role", []) for u in r.get("members", [])}:
             live.members[uid] = dc.get(f"/guilds/{gid}/members/{uid}")
-        for spec in cfg.get("message", []):
-            live.messages.append(_find_message(dc, live, cfg, spec))
+        for k in dict.fromkeys(m["channel"] for m in cfg.get("message", [])):
+            ch = live.channel(channel_spec(cfg, k))
+            if ch:
+                mine = [m for m in dc.get(f"/channels/{ch['id']}/messages?limit=100")
+                        if m["author"]["id"] == live.bot_id]
+                live.posts[k] = sorted(mine, key=lambda m: int(m["id"]))
+        if "onboarding" in cfg:
+            live.onboarding = dc.get(f"/guilds/{gid}/onboarding")
+        if "welcome_screen" in cfg:
+            live.welcome = dc.get_or_none(f"/guilds/{gid}/welcome-screen")
         return live
 
     def channel(self, spec: dict, category: bool = False) -> dict | None:
         pool = [c for c in self.channels if (c["type"] == 4) == category]
         by_id = next((c for c in pool if spec.get("id") and c["id"] == spec["id"]), None)
-        return by_id or next((c for c in pool if c["name"] == spec["name"]), None)
+        return by_id or next((c for c in pool if c["name"] in (spec["name"], key(spec))), None)
 
     def role(self, spec: dict) -> dict | None:
         by_id = next((r for r in self.roles if spec.get("id") and r["id"] == spec["id"]), None)
         return by_id or next((r for r in self.roles if r["name"] == spec["name"]), None)
 
-    def names(self) -> dict[str, str]:
-        return {c["name"]: c["id"] for c in self.channels if c["type"] != 4}
-
-
-def _find_message(dc: Discord, live: Live, cfg: dict, spec: dict) -> dict | None:
-    ch = live.channel(_spec_by_name(cfg, spec["channel"]))
-    if not ch:
-        return None
-    if spec.get("id"):
-        try:
-            return dc.get(f"/channels/{ch['id']}/messages/{spec['id']}")
-        except DiscordError as exc:
-            if exc.status == 404:
-                return None
-            raise
-    mine = [m for m in dc.get(f"/channels/{ch['id']}/messages?limit=50") if m["author"]["id"] == live.bot_id]
-    return mine[-1] if mine else None  # newest first -> the oldest bot message
-
-
-def _spec_by_name(cfg: dict, name: str) -> dict:
-    for _, ch in channel_specs(cfg):
-        if ch["name"] == name:
-            return ch
-    raise SystemExit(f"server.toml: no channel #{name}")
+    def refs(self, cfg: dict) -> dict[str, dict[str, str]]:
+        """key -> live id for channels, roles and emojis: what {#..} {@..} {:..} in texts point at."""
+        chans = {key(ch): c["id"] for _, ch in channel_specs(cfg) if (c := self.channel(ch))}
+        roles = {key(r): x["id"] for r in cfg.get("role", []) if (x := self.role(r))}
+        emojis = {e["name"]: e["id"] for e in self.emojis}
+        return {"#": chans, "@": roles, ":": emojis}
 
 
 # --- text helpers -------------------------------------------------------------------------------
 
-def render(text: str, names: dict[str, str]) -> str:
-    """{#bugs} -> <#id>, so the file stays readable and the message gets clickable links."""
+def render(text: str, refs: dict[str, dict[str, str]], planned: dict[str, set[str]] | None = None) -> str:
+    """{#bugs} -> channel link, {@release-pings} -> role, {:sessionmate} -> server emoji.
+
+    planned: keys server.toml has but the server not yet (a dry run before they exist) -> plain text.
+    """
+    fmt = {"#": "<#{}>", "@": "<@&{}>", ":": "<:{name}:{}>"}
+
     def sub(m: re.Match) -> str:
-        if m.group(1) not in names:
-            raise SystemExit(f"unknown channel {{#{m.group(1)}}} in a message")
-        return f"<#{names[m.group(1)]}>"
-    return re.sub(r"\{#([a-z0-9_-]+)\}", sub, text)
+        kind, name = m.group(1), m.group(2)
+        if name in refs.get(kind, {}):
+            return fmt[kind].format(refs[kind][name], name=name)
+        if planned and name in planned.get(kind, set()):
+            return f"{kind}{name}"
+        raise SystemExit(f"unknown {{{kind}{name}}} in a message")
+    return re.sub(r"\{([#@:])([\w-]+)\}", sub, text)
 
 
 def unrender(text: str, ids: dict[str, str]) -> str:
@@ -194,6 +229,14 @@ def _tags_cmp(body: list[dict]) -> list[tuple]:
     return [(t["name"], bool(t.get("moderated")), t.get("emoji_name")) for t in body]
 
 
+_ids = itertools.count()
+
+
+def snowflake() -> str:
+    """A fresh id for new onboarding prompts and options (Discord wants the client to pick one)."""
+    return str(((int(time.time() * 1000) - 1420070400000) << 22) + next(_ids))
+
+
 # --- plan ---------------------------------------------------------------------------------------
 
 @dataclass
@@ -202,6 +245,7 @@ class Change:
     method: str
     path: str
     body: object = None
+    files: list[tuple[str, bytes]] | None = None
 
 
 def plan_parents(cfg: dict, live: Live) -> list[Change]:
@@ -214,6 +258,11 @@ def plan_parents(cfg: dict, live: Live) -> list[Change]:
         if not live.channel(cat, category=True):
             out.append(Change(f"create category {cat['name']}", "POST", f"/guilds/{gid}/channels",
                               {"name": cat["name"], "type": 4}))
+    have = {e["name"] for e in live.emojis}
+    for e in cfg.get("emoji", []):
+        if e["name"] not in have:
+            out.append(Change(f"create emoji :{e['name']}:", "POST", f"/guilds/{gid}/emojis",
+                              {"name": e["name"], "image": data_uri(cfg["_base"] / e["image"]), "roles": []}))
     return out
 
 
@@ -236,21 +285,33 @@ def plan_channels(cfg: dict, live: Live) -> list[Change]:
 def plan_updates(cfg: dict, live: Live, prune: bool = False) -> list[Change]:
     gid = cfg["guild"]["id"]
     out: list[Change] = []
-    names = live.names()
+    refs = live.refs(cfg)
 
     # guild first: Community must be on before a channel can become an announcement channel
     g = cfg.get("guild", {})
     body = {k: g[k] for k in GUILD_FIELDS if k in g and live.guild.get(k) != g[k]}
     for k in GUILD_CHANNELS:
-        if k in g:
-            want = names.get(g[k])
-            if want and live.guild.get(f"{k}_id") != want:
-                body[f"{k}_id"] = want
+        want = refs["#"].get(g.get(k, ""))
+        if want and live.guild.get(f"{k}_id") != want:
+            body[f"{k}_id"] = want
     if g.get("community") and "COMMUNITY" not in live.guild.get("features", []):
         body["features"] = sorted(set(live.guild.get("features", [])) | {"COMMUNITY"})
     if body:
         out.append(Change(f"guild: {', '.join(sorted(body))}", "PATCH", f"/guilds/{gid}", body))
 
+    out += _plan_roles(cfg, live)
+    for cat, spec in channel_specs(cfg):
+        out += _plan_channel(cfg, live, cat, spec, prune)
+    out += _plan_positions(cfg, live)
+    out += plan_posts(cfg, live, refs)
+    out += _plan_onboarding(cfg, live, refs)
+    out += _plan_welcome_screen(cfg, live, refs)
+    return out
+
+
+def _plan_roles(cfg: dict, live: Live) -> list[Change]:
+    gid = cfg["guild"]["id"]
+    out = []
     for spec in cfg.get("role", []):
         role = live.role(spec)
         if not role:
@@ -273,51 +334,41 @@ def plan_updates(cfg: dict, live: Live, prune: bool = False) -> list[Change]:
             if member and role["id"] not in member["roles"]:
                 out.append(Change(f"give role {spec['name']} to {uid}", "PUT",
                                   f"/guilds/{gid}/members/{uid}/roles/{role['id']}"))
+    return out
 
-    for cat, spec in channel_specs(cfg):
-        ch = live.channel(spec)
-        if not ch:
-            continue
-        cb: dict = {}
-        if spec.get("id") and ch["name"] != spec["name"]:
-            cb["name"] = spec["name"]
-        parent = live.channel(cat, category=True)
-        if parent and ch.get("parent_id") != parent["id"]:
-            cb["parent_id"] = parent["id"]
-        if "topic" in spec and (ch.get("topic") or "") != spec["topic"]:
-            cb["topic"] = spec["topic"]
-        if "access" in spec and access_of(ch, gid) != spec["access"]:
-            others = [o for o in ch.get("permission_overwrites", []) if o["id"] != gid]
-            deny = ACCESS_DENY[spec["access"]]
-            cb["permission_overwrites"] = others + (
-                [{"id": gid, "type": 0, "allow": "0", "deny": str(deny)}] if deny else [])
-        if "tags" in spec:
-            tags = _tags_body(spec["tags"], ch, prune)
-            if _tags_cmp(tags) != _tags_now(ch):
-                cb["available_tags"] = tags
-        if "default_reaction" in spec:
-            now = (ch.get("default_reaction_emoji") or {}).get("emoji_name")
-            if now != spec["default_reaction"]:
-                cb["default_reaction_emoji"] = {"emoji_name": spec["default_reaction"]}
-        if cb:
-            out.append(Change(f"#{spec['name']}: {', '.join(sorted(cb))}", "PATCH", f"/channels/{ch['id']}", cb))
-        if spec.get("type") == "announcement" and ch["type"] != TYPES["announcement"]:
-            out.append(Change(f"#{spec['name']}: type -> announcement", "PATCH", f"/channels/{ch['id']}",
-                              {"type": TYPES["announcement"]}))
 
-    out += _plan_positions(cfg, live)
-
-    for spec, msg in zip(cfg.get("message", []), live.messages, strict=False):
-        cid = names.get(spec["channel"])
-        if not cid:
-            continue
-        text = render(spec["text"], names)
-        if msg is None:
-            out.append(Change(f"post message in #{spec['channel']} (then run export to keep its id)", "POST",
-                              f"/channels/{cid}/messages", {"content": text, "flags": 4}))
-        elif msg["content"] != text:
-            out.append(Change(f"edit message in #{spec['channel']}", "PATCH",
-                              f"/channels/{cid}/messages/{msg['id']}", {"content": text}))
+def _plan_channel(cfg: dict, live: Live, cat: dict, spec: dict, prune: bool) -> list[Change]:
+    gid = cfg["guild"]["id"]
+    ch = live.channel(spec)
+    if not ch:
+        return []
+    out = []
+    cb: dict = {}
+    if ch["name"] != spec["name"]:
+        cb["name"] = spec["name"]
+    parent = live.channel(cat, category=True)
+    if parent and ch.get("parent_id") != parent["id"]:
+        cb["parent_id"] = parent["id"]
+    if "topic" in spec and (ch.get("topic") or "") != spec["topic"]:
+        cb["topic"] = spec["topic"]
+    if "access" in spec and access_of(ch, gid) != spec["access"]:
+        others = [o for o in ch.get("permission_overwrites", []) if o["id"] != gid]
+        deny = ACCESS_DENY[spec["access"]]
+        cb["permission_overwrites"] = others + (
+            [{"id": gid, "type": 0, "allow": "0", "deny": str(deny)}] if deny else [])
+    if "tags" in spec:
+        tags = _tags_body(spec["tags"], ch, prune)
+        if _tags_cmp(tags) != _tags_now(ch):
+            cb["available_tags"] = tags
+    if "default_reaction" in spec:
+        now = (ch.get("default_reaction_emoji") or {}).get("emoji_name")
+        if now != spec["default_reaction"]:
+            cb["default_reaction_emoji"] = {"emoji_name": spec["default_reaction"]}
+    if cb:
+        out.append(Change(f"#{key(spec)}: {', '.join(sorted(cb))}", "PATCH", f"/channels/{ch['id']}", cb))
+    if spec.get("type") == "announcement" and ch["type"] != TYPES["announcement"]:
+        out.append(Change(f"#{key(spec)}: type -> announcement", "PATCH", f"/channels/{ch['id']}",
+                          {"type": TYPES["announcement"]}))
     return out
 
 
@@ -332,20 +383,116 @@ def _plan_positions(cfg: dict, live: Live) -> list[Change]:
     if not order:
         return []
 
-    def key(c: dict) -> tuple:
+    def pos(c: dict) -> tuple:
         return (c["position"], int(c["id"]))
 
-    cats_now = [c["id"] for c in sorted((c for c in live.channels if c["type"] == 4), key=key)]
+    cats_now = [c["id"] for c in sorted((c for c in live.channels if c["type"] == 4), key=pos)]
     cats_want = [c["id"] for c in order if c["type"] == 4]
     same = [i for i in cats_now if i in cats_want] == cats_want
     for cat in (c for c in order if c["type"] == 4):
-        kids_now = [c["id"] for c in sorted((c for c in live.channels if c.get("parent_id") == cat["id"]), key=key)]
+        kids_now = [c["id"] for c in sorted((c for c in live.channels if c.get("parent_id") == cat["id"]), key=pos)]
         kids_want = [c["id"] for c in order if c.get("parent_id") == cat["id"]]
         same = same and [i for i in kids_now if i in kids_want] == kids_want
     if same:
         return []
     return [Change("reorder channels", "PATCH", f"/guilds/{cfg['guild']['id']}/channels",
                    [{"id": c["id"], "position": i} for i, c in enumerate(order)])]
+
+
+def plan_posts(cfg: dict, live: Live, refs: dict) -> list[Change]:
+    """[[message]] specs of a channel = the bot's posts there, in this order."""
+    out: list[Change] = []
+    by_channel: dict[str, list[dict]] = {}
+    for spec in cfg.get("message", []):
+        by_channel.setdefault(spec["channel"], []).append(spec)
+    for k, specs in by_channel.items():
+        cid = refs["#"].get(k)
+        if not cid or k not in live.posts:
+            continue
+        planned = {"#": {key(ch) for _, ch in channel_specs(cfg)}, "@": {key(r) for r in cfg.get("role", [])},
+                   ":": {e["name"] for e in cfg.get("emoji", [])}}
+        want = []
+        for s in specs:
+            img = cfg["_base"] / s["image"] if s.get("image") else None
+            want.append((render(s.get("text", ""), refs, planned), image_name(img) if img else None, img))
+        have = [(m.get("content", ""), m["attachments"][0]["filename"] if m.get("attachments") else None)
+                for m in live.posts[k]]
+        if len(have) == len(want):
+            for m, (text, name, img), (now_text, now_name) in zip(live.posts[k], want, have, strict=True):
+                if name != now_name:
+                    out.append(Change(f"#{k}: new picture {name}", "PATCH", f"/channels/{cid}/messages/{m['id']}",
+                                      {"content": text, "attachments": [{"id": 0, "filename": name}] if img else []},
+                                      [(name, img.read_bytes())] if img else None))
+                elif text != now_text:
+                    out.append(Change(f"#{k}: edit post text", "PATCH", f"/channels/{cid}/messages/{m['id']}",
+                                      {"content": text}))
+            continue
+        out += [Change(f"#{k}: delete old post", "DELETE", f"/channels/{cid}/messages/{m['id']}")
+                for m in live.posts[k]]
+        for text, name, img in want:
+            body = {"content": text, "flags": 4, "allowed_mentions": NO_PINGS}
+            files = None
+            if img:
+                body["attachments"] = [{"id": 0, "filename": name}]
+                files = [(name, img.read_bytes())]
+            out.append(Change(f"#{k}: post {'picture ' + name if img else 'text'}", "POST",
+                              f"/channels/{cid}/messages", body, files))
+    return out
+
+
+def _onboarding_view(prompts: list[dict], default_ids: list[str], enabled: bool) -> tuple:
+    def opt(o: dict) -> tuple:
+        emoji = o.get("emoji_name") or (o.get("emoji") or {}).get("name")
+        return (o["title"], o.get("description") or "", emoji, tuple(sorted(o.get("role_ids", []))),
+                tuple(sorted(o.get("channel_ids", []))))
+    return (bool(enabled), tuple(sorted(default_ids)),
+            tuple((p["title"], bool(p["single_select"]), bool(p["required"]), tuple(opt(o) for o in p["options"]))
+                  for p in prompts))
+
+
+def _plan_onboarding(cfg: dict, live: Live, refs: dict) -> list[Change]:
+    ob = cfg.get("onboarding")
+    if not ob or live.onboarding is None:
+        return []
+    old = {p["title"]: p for p in live.onboarding.get("prompts", [])}
+    prompts = []
+    for p in ob.get("prompt", []):
+        was = old.get(p["title"], {})
+        old_opts = {o["title"]: o["id"] for o in was.get("options", [])}
+        options = []
+        for o in p["option"]:
+            opt = {"id": old_opts.get(o["title"]) or snowflake(), "title": o["title"],
+                   "description": o.get("description", ""),
+                   "role_ids": [refs["@"][r] for r in o.get("roles", []) if r in refs["@"]],
+                   "channel_ids": [refs["#"][c] for c in o.get("channels", []) if c in refs["#"]]}
+            if o.get("emoji"):
+                opt["emoji_name"] = o["emoji"]
+            options.append(opt)
+        prompts.append({"id": was.get("id") or snowflake(), "type": 0, "title": p["title"], "options": options,
+                        "single_select": p.get("single_select", False), "required": p.get("required", False),
+                        "in_onboarding": True})
+    body = {"prompts": prompts, "default_channel_ids": [refs["#"][c] for c in ob["default_channels"]],
+            "enabled": ob.get("enabled", True), "mode": 0}
+    now = _onboarding_view(live.onboarding.get("prompts", []), live.onboarding.get("default_channel_ids", []),
+                           live.onboarding.get("enabled", False))
+    if _onboarding_view(prompts, body["default_channel_ids"], body["enabled"]) == now:
+        return []
+    return [Change("onboarding", "PUT", f"/guilds/{cfg['guild']['id']}/onboarding", body)]
+
+
+def _plan_welcome_screen(cfg: dict, live: Live, refs: dict) -> list[Change]:
+    ws = cfg.get("welcome_screen")
+    if not ws:
+        return []
+    chans = [{"channel_id": refs["#"][c["channel"]], "description": c["description"], "emoji_name": c.get("emoji")}
+             for c in ws.get("channel", []) if c["channel"] in refs["#"]]
+    body = {"enabled": ws.get("enabled", True), "description": ws.get("description", ""), "welcome_channels": chans}
+    now = live.welcome or {}
+    same = (("WELCOME_SCREEN_ENABLED" in live.guild.get("features", [])) == body["enabled"]
+            and (now.get("description") or "") == body["description"]
+            and [(c["channel_id"], c["description"], c.get("emoji_name")) for c in now.get("welcome_channels", [])]
+            == [(c["channel_id"], c["description"], c["emoji_name"]) for c in chans])
+    return [] if same else [Change("welcome screen", "PATCH", f"/guilds/{cfg['guild']['id']}/welcome-screen", body)]
 
 
 def plan_extras(cfg: dict, live: Live) -> list[Change]:
@@ -358,6 +505,9 @@ def plan_extras(cfg: dict, live: Live) -> list[Change]:
     roles = {id(live.role(r)) for r in cfg.get("role", [])}
     out += [Change(f"extra role {r['name']}", "DELETE", f"/guilds/{gid}/roles/{r['id']}")
             for r in live.roles if id(r) not in roles and r["id"] != gid and not r.get("managed")]
+    emojis = {e["name"] for e in cfg.get("emoji", [])}
+    out += [Change(f"extra emoji :{e['name']}:", "DELETE", f"/guilds/{gid}/emojis/{e['id']}")
+            for e in live.emojis if e["name"] not in emojis]
     return out
 
 
@@ -384,6 +534,8 @@ def apply(dc: Discord, cfg: dict, *, dry_run: bool, prune: bool = False, echo=pr
             echo(f"  ! {c.desc} (not in server.toml; --prune deletes it)")
     if not done:
         echo("  server matches server.toml")
+    if any(c.method == "POST" and "/messages" not in c.path for c in done) and not dry_run:
+        echo("  new things on the server: run pin-ids to write their ids into server.toml")
     return done
 
 
@@ -391,80 +543,40 @@ def _run(dc: Discord, changes: list[Change], dry_run: bool, echo) -> None:
     for c in changes:
         echo(("  would " if dry_run else "  ") + c.desc)
         if not dry_run:
-            res = dc.call(c.method, c.path, c.body)
-            if c.method == "POST" and isinstance(res, dict) and res.get("id"):
-                echo(f"    id {res['id']}")
+            dc.call(c.method, c.path, c.body, c.files)
 
 
-# --- export -------------------------------------------------------------------------------------
+# --- ids ----------------------------------------------------------------------------------------
 
-def _q(s: str) -> str:
-    if "\n" in s:
-        return '"""\n' + s.replace("\\", "\\\\").replace('"""', '\\"""') + '"""'
-    return json.dumps(s, ensure_ascii=False)
+def pin_ids(dc: Discord, path: Path = CONFIG, echo=print) -> int:
+    """Write the live id under every [[role]] / [[category]] / [[category.channel]] that has none.
 
-
-def export(dc: Discord, guild_id: str) -> str:
-    """Live server -> server.toml text. Messages: bot posts in read-only channels (not announcements)."""
-    guild = dc.get(f"/guilds/{guild_id}")
-    channels = dc.get(f"/guilds/{guild_id}/channels")
-    roles = dc.get(f"/guilds/{guild_id}/roles")
-    bot_id = dc.get("/users/@me")["id"]
-    ids = {c["id"]: c["name"] for c in channels}
-
-    def key(c: dict) -> tuple:
-        return (c["position"], int(c["id"]))
-
-    L = ["# Sessionmate Discord server as code. Apply: python -m ops.discord apply --dry-run, then apply.",
-         "# Ids pin renames. {#name} in a message becomes a channel link.", "", "[guild]",
-         f"id = {_q(guild_id)}"]
-    for k in GUILD_FIELDS:
-        if guild.get(k) is not None:
-            v = guild[k]
-            L.append(f"{k} = {_q(v) if isinstance(v, str) else v}")
-    L.append(f"community = {'true' if 'COMMUNITY' in guild.get('features', []) else 'false'}")
-    for k in GUILD_CHANNELS:
-        if guild.get(f"{k}_id") in ids:
-            L.append(f"{k} = {_q(ids[guild[k + '_id']])}")
-
-    for r in sorted(roles, key=lambda r: -r["position"]):
-        if r["id"] == guild_id or r.get("managed"):
+    Text-level edit: comments and layout of server.toml stay as they are.
+    """
+    cfg = load(path)
+    live = Live.fetch(dc, cfg)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    out, added, section = [], 0, None
+    for i, line in enumerate(lines):
+        out.append(line)
+        head = re.match(r"\s*\[\[(role|category|category\.channel)\]\]\s*$", line)
+        if head:
+            section = head.group(1)
             continue
-        L += ["", "[[role]]", f"name = {_q(r['name'])}", f"id = {_q(r['id'])}",
-              f'color = "#{r["color"]:06X}"', f"hoist = {str(r['hoist']).lower()}",
-              f"mentionable = {str(r['mentionable']).lower()}",
-              "permissions = [" + ", ".join(_q(p) for p in perms_names(int(r["permissions"]))) + "]"]
-        holders = [guild["owner_id"]] if r["id"] in dc.get(f"/guilds/{guild_id}/members/{guild['owner_id']}")["roles"] else []
-        L.append("members = [" + ", ".join(_q(u) for u in holders) + "]  # owner only; add user ids by hand")
-
-    messages = []
-    for cat in sorted((c for c in channels if c["type"] == 4), key=key):
-        L += ["", "[[category]]", f"name = {_q(cat['name'])}", f"id = {_q(cat['id'])}"]
-        for ch in sorted((c for c in channels if c.get("parent_id") == cat["id"]), key=key):
-            L += ["", "[[category.channel]]", f"name = {_q(ch['name'])}", f"id = {_q(ch['id'])}",
-                  f"type = {_q(TYPE_NAMES.get(ch['type'], str(ch['type'])))}"]
-            access = access_of(ch, guild_id)
-            if access != "public":
-                L.append(f"access = {_q(access)}")
-            if ch.get("topic"):
-                L.append(f"topic = {_q(ch['topic'])}")
-            if ch["type"] == TYPES["forum"]:
-                emoji = (ch.get("default_reaction_emoji") or {}).get("emoji_name")
-                if emoji:
-                    L.append(f"default_reaction = {_q(emoji)}")
-                L.append("tags = [")
-                for t in ch.get("available_tags", []):
-                    extra = ", moderated = true" if t.get("moderated") else ""
-                    extra += f", emoji = {_q(t['emoji_name'])}" if t.get("emoji_name") else ""
-                    L.append(f"  {{ name = {_q(t['name'])}{extra} }},")
-                L.append("]")
-            if access == "read-only" and ch["type"] == TYPES["text"]:
-                mine = [m for m in dc.get(f"/channels/{ch['id']}/messages?limit=50") if m["author"]["id"] == bot_id]
-                messages += [(ch["name"], m) for m in reversed(mine)]
-    for name, m in messages:
-        L += ["", "[[message]]", f"channel = {_q(name)}", f"id = {_q(m['id'])}",
-              f"text = {_q(unrender(m['content'], ids))}"]
-    orphans = [c["name"] for c in channels if c["type"] != 4 and not c.get("parent_id")]
-    if orphans:
-        L += ["", "# Not exported (no category): " + ", ".join(orphans)]
-    return "\n".join(L) + "\n"
+        m = re.match(r'(\s*)name\s*=\s*(".*")\s*$', line)
+        if not (section and m):
+            continue
+        block = itertools.takewhile(lambda s: not s.lstrip().startswith("["), lines[i + 1:])
+        if any(re.match(r"\s*id\s*=", s) for s in block):
+            section = None
+            continue
+        name = json.loads(m.group(2))
+        spec = {"name": name}
+        thing = live.role(spec) if section == "role" else live.channel(spec, category=section == "category")
+        if thing:
+            out.append(f'{m.group(1)}id = "{thing["id"]}"')
+            added += 1
+            echo(f"  id for {section} {name}")
+        section = None
+    path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
+    return added

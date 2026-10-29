@@ -15,8 +15,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--config", type=Path, default=server.CONFIG)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("export", help="live server -> server.toml")
-    s.add_argument("--out", type=Path, help="default: print")
+    sub.add_parser("pin-ids", help="write live ids of new roles/categories/channels into server.toml")
 
     s = sub.add_parser("apply", help="server.toml -> live server")
     s.add_argument("--dry-run", action="store_true")
@@ -44,13 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     dc = Discord()
 
-    if a.cmd == "export":
-        text = server.export(dc, server.load(a.config)["guild"]["id"])
-        if a.out:
-            a.out.write_text(text, encoding="utf-8", newline="\n")  # LF on Windows too: no CRLF diff in git
-            print(f"written {a.out}")
-        else:
-            print(text, end="")
+    if a.cmd == "pin-ids":
+        print(f"  {server.pin_ids(dc, a.config)} ids written")
     elif a.cmd == "apply":
         server.apply(dc, server.load(a.config), dry_run=a.dry_run, prune=a.prune)
     elif a.cmd == "announce":

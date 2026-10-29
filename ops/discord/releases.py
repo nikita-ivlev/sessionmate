@@ -7,20 +7,27 @@ from . import server
 from .api import Discord
 
 EMBED_LIMIT = 4096
-COLOR = 0x8B5CF6
+COLOR = 0xFF5E00  # brand orange
+LOGO = "https://raw.githubusercontent.com/nikita-ivlev/sessionmate/main/assets/logo.png"
+PING_ROLE = "release-pings"  # role key in server.toml: members pick it in onboarding
 
 
-def announce_body(tag: str, url: str, notes: str) -> dict:
+def announce_body(tag: str, url: str, notes: str, ping: str | None = None) -> dict:
     if len(notes) > EMBED_LIMIT:
         tail = f"\n\n… full notes: {url}"
         notes = notes[: EMBED_LIMIT - len(tail)].rsplit("\n", 1)[0] + tail
+    content = f"New version: **{tag}**"
+    if ping:
+        content = f"<@&{ping}> {content}"
     return {
-        "content": f"New version: **{tag}**",
+        "content": content,
+        "allowed_mentions": {"roles": [ping] if ping else []},
         "embeds": [{
             "title": f"Sessionmate {tag}",
             "url": url,
             "description": notes,
             "color": COLOR,
+            "thumbnail": {"url": LOGO},
             "footer": {"text": "Pre-release" if "-" in tag else "Release"},
         }],
     }
@@ -40,7 +47,8 @@ def announce(dc: Discord, cfg: dict, tag: str, url: str, notes: str, channel: st
         if m["author"]["id"] == me and any(e.get("title") == title for e in m.get("embeds", [])):
             echo(f"  {tag} already announced (message {m['id']})")
             return None
-    msg = dc.post(f"/channels/{cid}/messages", announce_body(tag, url, notes))
+    ping = None if "-rc." in tag else server.role_id(cfg, PING_ROLE)  # test builds ping nobody
+    msg = dc.post(f"/channels/{cid}/messages", announce_body(tag, url, notes, ping))
     if dc.get(f"/channels/{cid}")["type"] == server.TYPES["announcement"]:
         dc.post(f"/channels/{cid}/messages/{msg['id']}/crosspost")  # reaches servers that follow #releases
     echo(f"  announced {tag} in #{channel or default_channel(tag)}")

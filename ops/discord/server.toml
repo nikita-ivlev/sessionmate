@@ -1,9 +1,13 @@
 # Sessionmate Discord server as code. Apply: python -m ops.discord apply --dry-run, then apply.
-# Ids pin renames. {#name} in a message becomes a channel link.
+# key = the stable name code and texts use; name = what people see (may carry an emoji).
+# Ids pin renames: after apply creates something new, run pin-ids.
+# In a message: {#key} = channel link, {@key} = role (shown, never pinged), {:name} = server emoji.
+# Pictures: ops/discord/art/build.py (Graphite style, picked 29.10).
 
 [guild]
 id = "1565368514670370826"
 name = "Sessionmate"
+description = "AI assistant inside FL Studio. Open alpha: bugs, ideas, releases."
 preferred_locale = "en-US"
 verification_level = 1
 explicit_content_filter = 2
@@ -17,32 +21,47 @@ system_channel = "general"
 [[role]]
 name = "Team"
 id = "1565375357069172757"
-color = "#8B5CF6"
+color = "#FF5E00"
 hoist = true
 mentionable = true
 permissions = ["KICK_MEMBERS", "BAN_MEMBERS", "MANAGE_CHANNELS", "MANAGE_MESSAGES", "MANAGE_THREADS", "MODERATE_MEMBERS"]
 members = ["1497345546606612550"]  # owner only; add user ids by hand
+
+[[role]]
+key = "release-pings"
+name = "Release pings"
+id = "1565390114819936473"
+hoist = false
+mentionable = false  # only the bot pings it, in release announcements
+permissions = []
+
+[[emoji]]
+name = "sessionmate"
+image = "art/emoji-sessionmate.png"
 
 [[category]]
 name = "INFO"
 id = "1565368514670370827"
 
 [[category.channel]]
-name = "welcome"
+key = "welcome"
+name = "👋┃welcome"
 id = "1565368602750619749"
 type = "text"
 access = "read-only"
 topic = "Start here: what Sessionmate is, links, rules."
 
 [[category.channel]]
-name = "releases"
+key = "releases"
+name = "📢┃releases"
 id = "1565368711462916218"
 type = "announcement"
 access = "read-only"
-topic = "New Sessionmate versions. Posted automatically from GitHub."
+topic = "New Sessionmate versions, posted by the bot. Pick the Release pings role to get a ping."
 
 [[category.channel]]
-name = "mod-log"
+key = "mod-log"
+name = "🔒┃mod-log"
 id = "1565375101103382558"
 type = "text"
 access = "private"
@@ -52,7 +71,8 @@ name = "FEEDBACK"
 id = "1565375084074504273"
 
 [[category.channel]]
-name = "bugs"
+key = "bugs"
+name = "🐛┃bugs"
 id = "1565368849069777007"
 type = "forum"
 topic = """
@@ -61,25 +81,26 @@ Please include:
 1. What you asked Sessionmate to do.
 2. What happened, and what you expected.
 3. FL Studio version and Windows version.
-4. The report file: Sessionmate window → Диагностика (Diagnostics) → Собрать отчёт (Collect report). Attach support_diagnostics_bundle.json.
+4. The report file: Sessionmate window → Settings → Diagnostics → Collect report. Attach support_diagnostics_bundle.json.
 Do not post API keys. The report file does not contain them.
 Each post gets a public GitHub issue: the text of your first message only, no name, no files. Status updates come back here."""
 default_reaction = "👀"
 tags = [
-  { name = "installer" },
-  { name = "fl-connection" },
-  { name = "chat" },
-  { name = "samples" },
-  { name = "crash" },
-  { name = "performance" },
-  { name = "confirmed", moderated = true },
-  { name = "fixed-in-next", moderated = true },
-  { name = "fixed", moderated = true },
-  { name = "can't-reproduce", moderated = true },
+  { name = "installer", emoji = "📦" },
+  { name = "fl-connection", emoji = "🔌" },
+  { name = "chat", emoji = "💬" },
+  { name = "samples", emoji = "🥁" },
+  { name = "crash", emoji = "💥" },
+  { name = "performance", emoji = "🐢" },
+  { name = "confirmed", moderated = true, emoji = "🔍" },
+  { name = "fixed-in-next", moderated = true, emoji = "🔧" },
+  { name = "fixed", moderated = true, emoji = "✅" },
+  { name = "can't-reproduce", moderated = true, emoji = "❓" },
 ]
 
 [[category.channel]]
-name = "ideas"
+key = "ideas"
+name = "💡┃ideas"
 id = "1565368893525205012"
 type = "forum"
 topic = """
@@ -87,15 +108,15 @@ One post = one idea. Search first — if the idea exists, add 👍 and your use 
 Tell us: what you want to do in FL Studio, and why it matters for your workflow."""
 default_reaction = "👍"
 tags = [
-  { name = "chat" },
-  { name = "mixing" },
-  { name = "samples" },
-  { name = "midi" },
-  { name = "workflow" },
-  { name = "integration" },
-  { name = "planned", moderated = true },
-  { name = "done", moderated = true },
-  { name = "not-now", moderated = true },
+  { name = "chat", emoji = "💬" },
+  { name = "mixing", emoji = "🔊" },
+  { name = "samples", emoji = "🥁" },
+  { name = "midi", emoji = "🎹" },
+  { name = "workflow", emoji = "⚡" },
+  { name = "integration", emoji = "🔗" },
+  { name = "planned", moderated = true, emoji = "📅" },
+  { name = "done", moderated = true, emoji = "✅" },
+  { name = "not-now", moderated = true, emoji = "💤" },
 ]
 
 [[category]]
@@ -103,19 +124,22 @@ name = "COMMUNITY"
 id = "1565375086859526156"
 
 [[category.channel]]
-name = "general"
+key = "general"
+name = "💬┃general"
 id = "1565375090130952274"
 type = "text"
 topic = "Everything else about Sessionmate and FL Studio."
 
 [[category.channel]]
-name = "help"
+key = "help"
+name = "🛟┃help"
 id = "1565375093419409433"
 type = "text"
 topic = "Install, setup, LLM key, Ollama questions."
 
 [[category.channel]]
-name = "showcase"
+key = "showcase"
+name = "🎧┃showcase"
 id = "1565375096900685885"
 type = "text"
 topic = "Share tracks and clips you made with Sessionmate."
@@ -125,33 +149,104 @@ name = "VOICE"
 id = "1565368514670370828"
 
 [[category.channel]]
-name = "Lounge"
+key = "lounge"
+name = "🔊 Lounge"
 id = "1565368515102376027"
 type = "voice"
 
+# --- #welcome: the bot's posts, top to bottom ---------------------------------------------------
+
 [[message]]
 channel = "welcome"
-id = "1565375367202472098"
+image = "art/welcome-hero.png"
+
+[[message]]
+channel = "welcome"
 text = """
-**Welcome to Sessionmate** 👋
-Sessionmate is an AI assistant inside FL Studio. You type what you want, it builds it in your project.
-This is an open alpha. Things will break. Your reports make it better.
+{:sessionmate} **Sessionmate** is an AI assistant inside FL Studio. You type what you want, it builds it in your project.
+This is an open alpha. Things will break. Your reports make it better."""
 
-**Get started**
-• Download: https://github.com/nikita-ivlev/sessionmate/releases
-• Known limitations: https://github.com/nikita-ivlev/sessionmate/blob/main/KNOWN_LIMITATIONS.md
+[[message]]
+channel = "welcome"
+image = "art/header-get-started.png"
 
-**Where to post**
+[[message]]
+channel = "welcome"
+text = """
+• **Download:** <https://github.com/nikita-ivlev/sessionmate/releases>
+• **Known limitations:** <https://github.com/nikita-ivlev/sessionmate/blob/main/KNOWN_LIMITATIONS.md>
+• **New versions:** pick 🔔 {@release-pings} in *Channels & Roles*. The bot pings you on each release."""
+
+[[message]]
+channel = "welcome"
+image = "art/header-where-to-post.png"
+
+[[message]]
+channel = "welcome"
+text = """
 • {#bugs} — something broke. One post per bug.
 • {#ideas} — a feature you want.
 • {#help} — install or setup questions.
 • {#showcase} — music you made with Sessionmate.
-• {#releases} — new versions (automatic).
+• {#releases} — new versions (automatic)."""
 
-**Rules**
+[[message]]
+channel = "welcome"
+image = "art/header-rules.png"
+
+[[message]]
+channel = "welcome"
+text = """
 1. Be kind. No insults, no hate, no harassment.
-2. No spam, no ads, no self-promo outside showcase.
+2. No spam, no ads, no self-promo outside {#showcase}.
 3. No piracy. No cracked FL Studio, no cracked plugins, no links to them.
 4. Do not post API keys. Check your screenshots and logs before you post.
 5. English please, so everyone can read it.
-6. Discord Terms of Service apply: https://discord.com/terms"""
+6. Discord Terms of Service apply: <https://discord.com/terms>"""
+
+# --- first visit --------------------------------------------------------------------------------
+
+[onboarding]
+enabled = true
+# Discord needs 7+ default channels, 5 of them open for posting.
+default_channels = ["welcome", "releases", "bugs", "ideas", "general", "help", "showcase"]
+
+[[onboarding.prompt]]
+title = "Get pinged on new versions?"
+single_select = false
+required = false
+
+[[onboarding.prompt.option]]
+title = "Ping me on new releases"
+description = "The bot pings this role when a new version is out."
+emoji = "🔔"
+roles = ["release-pings"]
+
+[welcome_screen]
+enabled = true
+description = "AI assistant inside FL Studio. Open alpha: grab the build, tell us what breaks."
+
+[[welcome_screen.channel]]
+channel = "welcome"
+description = "Start here: links and rules"
+emoji = "👋"
+
+[[welcome_screen.channel]]
+channel = "releases"
+description = "New versions"
+emoji = "📢"
+
+[[welcome_screen.channel]]
+channel = "bugs"
+description = "Something broke? Post it here"
+emoji = "🐛"
+
+[[welcome_screen.channel]]
+channel = "ideas"
+description = "Features you want"
+emoji = "💡"
+
+[[welcome_screen.channel]]
+channel = "help"
+description = "Install and setup questions"
+emoji = "🛟"
