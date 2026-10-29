@@ -1,0 +1,29 @@
+name: Idea
+description: Something Sessionmate should do, or do better.
+labels: [idea]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        By sharing an idea you agree we may use it in Sessionmate (EULA, "Feedback").
+  - type: textarea
+    id: request
+    attributes:
+      label: What would you ask Sessionmate?
+      description: Write it the way you would type it in the chat.
+      placeholder: '"put a sidechain from the kick on the bass"'
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What do you do by hand today?
+      description: The steps in FL it would save you.
+  - type: dropdown
+    id: how_often
+    attributes:
+      label: How often would you use it?
+      options:
+        - In every project
+        - Sometimes
+        - Rarely

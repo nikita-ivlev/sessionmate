@@ -1,0 +1,73 @@
+﻿SESSIONMATE ALPHA - END USER LICENSE AGREEMENT
+Version 1, 29 October 2026
+
+Sessionmate is made by Nikita Ivlev ("we", "us"). Contact: nickivlev95@gmail.com
+
+Please read this agreement. By installing or using Sessionmate you accept it.
+If you do not accept it, do not install or use Sessionmate.
+
+1. LICENSE
+We give you a free, personal, non-exclusive, non-transferable license, which we can revoke,
+to install and use this alpha version of Sessionmate on computers you own or control,
+to test it and to make music with it.
+
+2. WHAT YOU MAY NOT DO
+You may not:
+a) copy Sessionmate, except to install it and to keep one backup copy;
+b) sell, rent, lend, share, publish, host or give Sessionmate or parts of it to others;
+c) reverse engineer, decompile or disassemble Sessionmate, or try to extract its source code,
+   prompts, models or data, except where the law allows this despite this restriction;
+d) change Sessionmate, or remove or go around its notices, license checks or protection;
+e) use Sessionmate, or what you learn from it, to make a competing product;
+f) use Sessionmate in a way that breaks the law or the rights of others.
+
+3. OWNERSHIP
+Sessionmate is licensed, not sold. We keep all rights in Sessionmate, including copyright.
+(c) 2026 Nikita Ivlev. All rights reserved. "Sessionmate" is our product name.
+
+4. YOUR MUSIC AND YOUR FILES
+Your projects, samples, recordings and the music you make with Sessionmate stay yours.
+We claim no rights in them.
+
+5. OTHER PRODUCTS AND SERVICES
+a) Sessionmate is not made, endorsed or sponsored by Image-Line Software and is not
+   connected with it. FL Studio is a trademark of Image-Line Software. You need your own
+   FL Studio license.
+b) For requests in words you choose an AI provider (or a model on your own PC). Your
+   requests go from your PC directly to that provider under its own terms. You are
+   responsible for your accounts, keys and any costs there.
+c) loopMIDI is a separate program by Tobias Erichsen with its own terms.
+d) Sessionmate contains third-party components under their own licenses. They are listed
+   in THIRD_PARTY_NOTICES.txt in the Sessionmate folder. Those licenses apply to those
+   components.
+
+6. FEEDBACK
+If you send us ideas, suggestions or bug reports, you allow us to use them freely, for any
+purpose, worldwide and forever, without payment or other duty to you.
+
+7. ALPHA SOFTWARE - NO WARRANTY
+This is an early test version. It can have errors, change or damage project files, stop
+working or change at any time. Keep backups of your projects.
+TO THE EXTENT THE LAW ALLOWS, SESSIONMATE IS GIVEN "AS IS", WITHOUT ANY WARRANTY,
+EXPRESS OR IMPLIED, INCLUDING FITNESS FOR A PURPOSE AND NON-INFRINGEMENT.
+
+8. LIMITATION OF LIABILITY
+TO THE EXTENT THE LAW ALLOWS, WE ARE NOT LIABLE FOR ANY INDIRECT, INCIDENTAL OR
+CONSEQUENTIAL DAMAGES, LOSS OF DATA, PROJECTS, PROFITS OR INCOME. OUR TOTAL LIABILITY
+IS LIMITED TO THE AMOUNT YOU PAID FOR SESSIONMATE (THE ALPHA IS FREE). Nothing in this
+agreement limits liability that the law does not allow to limit.
+
+9. END OF THE LICENSE
+This license lasts until it ends. You can end it at any time by uninstalling Sessionmate.
+We can end it at any time. An alpha build can stop working after its test period; then
+download a newer version. When the license ends, stop using Sessionmate and uninstall it.
+Sections 2, 3, 6, 7 and 8 stay in force after the end.
+
+10. PRIVACY
+How Sessionmate handles data is described in PRIVACY.txt in the Sessionmate folder.
+
+11. OTHER TERMS
+New versions of Sessionmate can come with a new version of this agreement. If a part of
+this agreement is not valid, the rest stays in force. This is the whole agreement between
+you and us about Sessionmate. If a translation differs from this English text, this
+English text applies.

@@ -1,0 +1,73 @@
+name: Bug report
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Sessionmate! One bug per issue, please.
+        Do not paste API keys. Sessionmate never puts your key into the report.
+  - type: input
+    id: version
+    attributes:
+      label: Sessionmate version
+      description: Sessionmate window → Диагностика (Diagnostics), first line. Or the Setup file name.
+      placeholder: 0.3.0-alpha.1
+    validations:
+      required: true
+  - type: input
+    id: fl_version
+    attributes:
+      label: FL Studio version
+      description: FL Studio → Help → About.
+      placeholder: 26.1.4 build 1234
+    validations:
+      required: true
+  - type: dropdown
+    id: model
+    attributes:
+      label: Model for requests
+      options:
+        - Z.ai GLM Flash
+        - Groq
+        - Ollama
+        - Claude Code
+        - Claude (API key)
+        - ChatGPT
+        - DeepSeek
+        - Gemini
+        - Qwen
+        - YandexGPT
+        - Not set up / Setup did not finish
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: The exact request you typed or said, and the steps before it.
+      placeholder: |
+        1. Opened a new project
+        2. Typed "make a trap kit at 140"
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Report file
+      description: |
+        Sessionmate window → Диагностика → Собрать отчёт (Collect report).
+        Drag `support_diagnostics_bundle.json` here. Your Windows user name is masked in it;
+        names of sounds you rated stay in it.
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshot or video (optional)
