@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "export":
         text = server.export(dc, server.load(a.config)["guild"]["id"])
         if a.out:
-            a.out.write_text(text, encoding="utf-8")
+            a.out.write_text(text, encoding="utf-8", newline="\n")  # LF on Windows too: no CRLF diff in git
             print(f"written {a.out}")
         else:
             print(text, end="")

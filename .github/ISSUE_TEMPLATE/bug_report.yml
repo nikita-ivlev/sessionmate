@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: Sessionmate version
-      description: Sessionmate window → Диагностика (Diagnostics), first line. Or the Setup file name.
+      description: Sessionmate window → Settings → Diagnostics, first line. Or the Setup file name.
       placeholder: 0.3.0-alpha.1
     validations:
       required: true
@@ -62,7 +62,7 @@ body:
     attributes:
       label: Report file
       description: |
-        Sessionmate window → Диагностика → Собрать отчёт (Collect report).
+        Sessionmate window → Settings → Diagnostics → Collect report.
         Drag `support_diagnostics_bundle.json` here. Your Windows user name is masked in it;
         names of sounds you rated stay in it.
     validations:

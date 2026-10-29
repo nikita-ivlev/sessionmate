@@ -16,7 +16,8 @@
 
 ## Window and language
 
-- The window labels are **in Russian** for now. Requests and answers work in English too.
+- The window speaks **English or Russian** (Settings → Window language; by default, as in Windows).
+  Requests and answers work in both.
 - The first voice request downloads the speech model (~240 MB).
 
 ## Sample library
@@ -44,5 +45,5 @@
 ## Reporting
 
 - Sessionmate sends nothing by itself. To report a bug, collect the report in the window
-  (*Диагностика → Собрать отчёт*) and attach it to an issue. The Windows user name in paths
+  (*Settings → Diagnostics → Collect report*) and attach it to an issue. The Windows user name in paths
   is replaced with `%USERPROFILE%`; sample names you rated stay in the file.
