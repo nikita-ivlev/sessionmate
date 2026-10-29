@@ -1,6 +1,7 @@
 """Release time: announce the version, close the loop on bugs tagged fixed-in-next."""
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 
 from . import server
@@ -13,9 +14,12 @@ PING_ROLE = "release-pings"  # role key in server.toml: members pick it in onboa
 
 
 def announce_body(tag: str, url: str, notes: str, ping: str | None = None) -> dict:
-    if len(notes) > EMBED_LIMIT:
-        tail = f"\n\n… full notes: {url}"
-        notes = notes[: EMBED_LIMIT - len(tail)].rsplit("\n", 1)[0] + tail
+    """notes = the CHANGELOG section of this version (markdown)."""
+    notes = re.sub(r"(?m)^#{1,6}\s*(.+?)\s*$", r"**\1**", notes.strip())  # headings -> bold: one size in an embed
+    tail = f"\n\n[Download and full notes]({url})"
+    if len(notes) + len(tail) > EMBED_LIMIT:
+        notes = notes[: EMBED_LIMIT - len(tail) - 2].rsplit("\n", 1)[0] + "\n…"
+    notes += tail
     content = f"New version: **{tag}**"
     if ping:
         content = f"<@&{ping}> {content}"
@@ -40,6 +44,7 @@ def default_channel(tag: str) -> str:
 
 def announce(dc: Discord, cfg: dict, tag: str, url: str, notes: str, channel: str | None = None,
              echo=print) -> str | None:
+    _no_private_terms(notes)
     cid = server.channel_id(cfg, channel or default_channel(tag))
     me = dc.get("/users/@me")["id"]
     title = f"Sessionmate {tag}"
@@ -53,6 +58,17 @@ def announce(dc: Discord, cfg: dict, tag: str, url: str, notes: str, channel: st
         dc.post(f"/channels/{cid}/messages/{msg['id']}/crosspost")  # reaches servers that follow #releases
     echo(f"  announced {tag} in #{channel or default_channel(tag)}")
     return msg["id"]
+
+
+def _no_private_terms(text: str) -> None:
+    """Features after someone else's idea never reach Discord. The list lives only in the code repo."""
+    try:
+        from ops.release import changelog  # noqa: PLC0415 - absent in the public repo copy
+    except ImportError:
+        return
+    hits = changelog.hidden_hits(text, changelog.hidden_terms())
+    if hits:
+        raise SystemExit(f"announcement names private things: {', '.join(hits)}")
 
 
 def forum_threads(dc: Discord, guild_id: str, forum_id: str) -> Iterator[dict]:
