@@ -78,7 +78,8 @@ type = "announcement"
 access = "read-only"
 topic = "New Sessionmate versions, posted by the bot. Pick the Release pings role to get a ping."
 
-# One bot post, rebuilt from #ideas (planned / done) by `python -m ops.discord roadmap` in the code repo's CI.
+# Bot posts: one per milestone (ops/release/roadmap.toml), then #ideas (planned / done).
+# Rebuilt by `python -m ops.discord roadmap` in the code repo's CI.
 [[category.channel]]
 key = "roadmap"
 name = "📍┃roadmap"
