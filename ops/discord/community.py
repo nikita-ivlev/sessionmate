@@ -1,6 +1,7 @@
 """People's side of the server: roles for what they gave, the roadmap, polls."""
 from __future__ import annotations
 
+import datetime
 import tomllib
 
 from . import server
@@ -57,9 +58,21 @@ def _post(title: str, lines: list[str]) -> dict:
             "allowed_mentions": {"parse": []}}
 
 
+def due_week(due: str) -> str:
+    """The week the date falls in, Monday to Sunday ("Nov 2–8", "Oct 26 – Nov 1"): no exact release day in public."""
+    day = datetime.date.fromisoformat(due)
+    monday = day - datetime.timedelta(days=day.weekday())
+    sunday = monday + datetime.timedelta(days=6)
+    if monday.month == sunday.month:
+        return f"{monday:%b} {monday.day}–{sunday.day}"
+    return f"{monday:%b} {monday.day} – {sunday:%b} {sunday.day}"
+
+
 def milestone_body(m: dict) -> dict:
     """One milestone = one release: its own post, so a long plan fits Discord's 6000 characters a post."""
     title = f"📍 {m['version']} — {m['title']}" + (f" · 🛠 {m['status']}" if m.get("status") else "")
+    if m.get("due"):
+        title += f" · 📅 {due_week(m['due'])}"
     return _post(title, [f"• **{i['title']}** — {i['text']}" for i in m["items"]])
 
 
